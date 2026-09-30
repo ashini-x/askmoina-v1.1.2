@@ -37,10 +37,11 @@
     followLatest: true,
     thinking: {
       stage: 0,
-      desiredStage: 0,
+      queuedStages: [],
       playing: false,
       transitionTimer: null,
       settleTimer: null,
+      runToken: 0,
     },
   };
 
@@ -94,10 +95,15 @@
   }
 
   function stageForPhase(phase, prompt) {
+    // Always use the original six phrases. For very short prompts, condense the
+    // progression without changing its wording. Longer prompts use the full
+    // tier-aligned sequence.
     if (isSimplePrompt(prompt)) {
-      if (phase === "initializing" || phase === "searching") return 0;
-      if (phase === "synthesizing" || phase === "auditing") return 2;
+      if (phase === "initializing") return 0;
+      if (phase === "searching") return 1;
+      if (phase === "synthesizing") return 2;
       if (phase === "sandbox") return 3;
+      if (phase === "auditing") return 4;
       return null;
     }
     return Number.isInteger(PHASE_TO_STAGE[phase]) ? PHASE_TO_STAGE[phase] : null;
@@ -109,51 +115,84 @@
     state.thinking.transitionTimer = null;
     state.thinking.settleTimer = null;
     state.thinking.playing = false;
+    state.thinking.queuedStages = [];
+    state.thinking.runToken += 1;
+  }
+
+  function runNextThinkingStage() {
+    if (!qs('#thinkingPhrase') || !qs('#thinking')) return;
+    if (!state.thinking.queuedStages.length) {
+      state.thinking.playing = false;
+      return;
+    }
+
+    const phrase = qs('#thinkingPhrase');
+    const nextStage = state.thinking.queuedStages.shift();
+    const token = state.thinking.runToken;
+    state.thinking.playing = true;
+    qs('#thinking')?.classList.add('visible');
+
+    phrase.classList.remove('is-in', 'is-resting');
+    phrase.classList.add('is-out');
+
+    state.thinking.transitionTimer = setTimeout(() => {
+      if (token !== state.thinking.runToken) return;
+      state.thinking.stage = nextStage;
+      phrase.textContent = PHRASES[nextStage] || PHRASES[0];
+      phrase.classList.remove('is-out');
+      phrase.classList.add('is-in');
+
+      requestAnimationFrame(() => {
+        if (token !== state.thinking.runToken) return;
+        phrase.classList.remove('is-in');
+        phrase.classList.add('is-resting');
+      });
+
+      state.thinking.settleTimer = setTimeout(() => {
+        if (token !== state.thinking.runToken) return;
+        state.thinking.transitionTimer = null;
+        state.thinking.settleTimer = null;
+        if (state.thinking.queuedStages.length) {
+          runNextThinkingStage();
+        } else {
+          state.thinking.playing = false;
+        }
+      }, 720);
+    }, 260);
   }
 
   function requestThinkingStage(stage) {
-    if (!Number.isInteger(stage)) return;
-    state.thinking.desiredStage = stage;
-    const phrase = qs("#thinkingPhrase");
-    const thinking = qs("#thinking");
-    if (!phrase || !thinking) return;
-    thinking.classList.add("visible");
+    if (!Number.isInteger(stage) || stage < 0 || stage >= PHRASES.length) return;
+    const lastQueued = state.thinking.queuedStages[state.thinking.queuedStages.length - 1];
+    if (stage <= state.thinking.stage && !state.thinking.playing) return;
+    if (stage === lastQueued) return;
 
-    if (state.thinking.playing) return;
-    if (state.thinking.stage === state.thinking.desiredStage && phrase.textContent === PHRASES[state.thinking.stage]) return;
+    // Preserve the original ordered sequence instead of jumping to the newest phase.
+    const from = Math.max(state.thinking.stage + 1, 0);
+    if (stage > state.thinking.stage) {
+      for (let i = from; i <= stage; i += 1) {
+        if (i !== state.thinking.stage && !state.thinking.queuedStages.includes(i)) {
+          state.thinking.queuedStages.push(i);
+        }
+      }
+    }
 
-    state.thinking.playing = true;
-    phrase.classList.remove("is-in", "is-resting");
-    phrase.classList.add("is-out");
-
-    state.thinking.transitionTimer = setTimeout(() => {
-      const nextStage = state.thinking.desiredStage;
-      state.thinking.stage = nextStage;
-      phrase.textContent = PHRASES[nextStage] || PHRASES[0];
-      phrase.classList.remove("is-out");
-      phrase.classList.add("is-in");
-      requestAnimationFrame(() => {
-        phrase.classList.remove("is-in");
-        phrase.classList.add("is-resting");
-      });
-      state.thinking.settleTimer = setTimeout(() => {
-        state.thinking.playing = false;
-        if (state.thinking.stage !== state.thinking.desiredStage) requestThinkingStage(state.thinking.desiredStage);
-      }, 260);
-    }, 160);
+    if (!state.thinking.playing) runNextThinkingStage();
   }
 
   function beginThinking(prompt) {
     cancelThinkingTransitions();
-    state.thinking.stage = 0;
-    state.thinking.desiredStage = 0;
-    const phrase = qs("#thinkingPhrase");
+    state.thinking.stage = -1;
+    state.thinking.queuedStages = [0];
+    state.thinking.playing = false;
+    const phrase = qs('#thinkingPhrase');
     if (phrase) {
       phrase.textContent = PHRASES[0];
-      phrase.className = "thinking-phrase is-resting";
+      phrase.className = 'thinking-phrase is-resting';
     }
-    qs("#thinking")?.classList.add("visible");
+    qs('#thinking')?.classList.add('visible');
     state.currentPrompt = prompt;
+    runNextThinkingStage();
   }
 
   function hideThinking() {
@@ -663,6 +702,7 @@
             const text = String(packet.data?.text || "");
             if (text) {
               finalText += text;
+              cancelThinkingTransitions();
               hideThinking();
               updateLiveResponse(finalText);
             }
@@ -674,6 +714,11 @@
             throw new Error(String(packet.data?.message || "AskMoina could not complete the request."));
           } else if (packet.event === "complete") {
             state.currentPhase = "complete";
+            if (!finalText) {
+              state.thinking.queuedStages = [5];
+              state.thinking.playing = false;
+              runNextThinkingStage();
+            }
           }
 
           if (state.followLatest && (packet.event === "delta" || packet.event === "replace")) {
