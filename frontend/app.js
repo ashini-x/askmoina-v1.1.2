@@ -9,12 +9,11 @@
   const MODE_KEY = "askmoina.mode.v2";
   const MAX_HISTORY = 40;
   const PHRASES = [
-    "Thinking through the idea",
-    "Exploring a few directions",
-    "Connecting the pieces",
-    "Working through the details",
-    "Shaping a response",
-    "Almost there",
+    "Initializing AskMoina Pipeline",
+    "Indexing Real-Time Knowledge Base",
+    "Synthesizing Neural Reasoning",
+    "Performing Sandbox Verification",
+    "Executing Precision Audit",
   ];
   const MODE_LABELS = { logical: "Logical", auto: "Auto", creative: "Creative" };
 
@@ -37,11 +36,10 @@
     followLatest: true,
     thinking: {
       stage: 0,
-      queuedStages: [],
+      desiredStage: 0,
       playing: false,
       transitionTimer: null,
       settleTimer: null,
-      runToken: 0,
     },
   };
 
@@ -94,18 +92,7 @@
     return normalized.length <= 70 && normalized.split(/\s+/).length <= 12;
   }
 
-  function stageForPhase(phase, prompt) {
-    // Always use the original six phrases. For very short prompts, condense the
-    // progression without changing its wording. Longer prompts use the full
-    // tier-aligned sequence.
-    if (isSimplePrompt(prompt)) {
-      if (phase === "initializing") return 0;
-      if (phase === "searching") return 1;
-      if (phase === "synthesizing") return 2;
-      if (phase === "sandbox") return 3;
-      if (phase === "auditing") return 4;
-      return null;
-    }
+  function stageForPhase(phase) {
     return Number.isInteger(PHASE_TO_STAGE[phase]) ? PHASE_TO_STAGE[phase] : null;
   }
 
@@ -115,84 +102,52 @@
     state.thinking.transitionTimer = null;
     state.thinking.settleTimer = null;
     state.thinking.playing = false;
-    state.thinking.queuedStages = [];
-    state.thinking.runToken += 1;
-  }
-
-  function runNextThinkingStage() {
-    if (!qs('#thinkingPhrase') || !qs('#thinking')) return;
-    if (!state.thinking.queuedStages.length) {
-      state.thinking.playing = false;
-      return;
-    }
-
-    const phrase = qs('#thinkingPhrase');
-    const nextStage = state.thinking.queuedStages.shift();
-    const token = state.thinking.runToken;
-    state.thinking.playing = true;
-    qs('#thinking')?.classList.add('visible');
-
-    phrase.classList.remove('is-in', 'is-resting');
-    phrase.classList.add('is-out');
-
-    state.thinking.transitionTimer = setTimeout(() => {
-      if (token !== state.thinking.runToken) return;
-      state.thinking.stage = nextStage;
-      phrase.textContent = PHRASES[nextStage] || PHRASES[0];
-      phrase.classList.remove('is-out');
-      phrase.classList.add('is-in');
-
-      requestAnimationFrame(() => {
-        if (token !== state.thinking.runToken) return;
-        phrase.classList.remove('is-in');
-        phrase.classList.add('is-resting');
-      });
-
-      state.thinking.settleTimer = setTimeout(() => {
-        if (token !== state.thinking.runToken) return;
-        state.thinking.transitionTimer = null;
-        state.thinking.settleTimer = null;
-        if (state.thinking.queuedStages.length) {
-          runNextThinkingStage();
-        } else {
-          state.thinking.playing = false;
-        }
-      }, 720);
-    }, 260);
   }
 
   function requestThinkingStage(stage) {
-    if (!Number.isInteger(stage) || stage < 0 || stage >= PHRASES.length) return;
-    const lastQueued = state.thinking.queuedStages[state.thinking.queuedStages.length - 1];
-    if (stage <= state.thinking.stage && !state.thinking.playing) return;
-    if (stage === lastQueued) return;
+    if (!Number.isInteger(stage)) return;
+    state.thinking.desiredStage = stage;
+    const phrase = qs("#thinkingPhrase");
+    const thinking = qs("#thinking");
+    if (!phrase || !thinking) return;
+    thinking.classList.add("visible");
 
-    // Preserve the original ordered sequence instead of jumping to the newest phase.
-    const from = Math.max(state.thinking.stage + 1, 0);
-    if (stage > state.thinking.stage) {
-      for (let i = from; i <= stage; i += 1) {
-        if (i !== state.thinking.stage && !state.thinking.queuedStages.includes(i)) {
-          state.thinking.queuedStages.push(i);
-        }
-      }
-    }
+    if (state.thinking.playing) return;
+    if (state.thinking.stage === state.thinking.desiredStage && phrase.textContent === (state.thinking.labels[state.thinking.stage] || PHRASES[state.thinking.stage])) return;
 
-    if (!state.thinking.playing) runNextThinkingStage();
+    state.thinking.playing = true;
+    phrase.classList.remove("is-in", "is-resting");
+    phrase.classList.add("is-out");
+
+    state.thinking.transitionTimer = setTimeout(() => {
+      const nextStage = state.thinking.desiredStage;
+      state.thinking.stage = nextStage;
+      phrase.textContent = state.thinking.labels[nextStage] || PHRASES[nextStage] || PHRASES[0];
+      phrase.classList.remove("is-out");
+      phrase.classList.add("is-in");
+      requestAnimationFrame(() => {
+        phrase.classList.remove("is-in");
+        phrase.classList.add("is-resting");
+      });
+      state.thinking.settleTimer = setTimeout(() => {
+        state.thinking.playing = false;
+        if (state.thinking.stage !== state.thinking.desiredStage) requestThinkingStage(state.thinking.desiredStage);
+      }, 260);
+    }, 160);
   }
 
   function beginThinking(prompt) {
     cancelThinkingTransitions();
-    state.thinking.stage = -1;
-    state.thinking.queuedStages = [0];
-    state.thinking.playing = false;
-    const phrase = qs('#thinkingPhrase');
+    state.thinking.stage = 0;
+    state.thinking.desiredStage = 0;
+    state.thinking.labels = [];
+    const phrase = qs("#thinkingPhrase");
     if (phrase) {
-      phrase.textContent = PHRASES[0];
-      phrase.className = 'thinking-phrase is-resting';
+      phrase.textContent = state.thinking.labels[0] || PHRASES[0];
+      phrase.className = "thinking-phrase is-resting";
     }
-    qs('#thinking')?.classList.add('visible');
+    qs("#thinking")?.classList.add("visible");
     state.currentPrompt = prompt;
-    runNextThinkingStage();
   }
 
   function hideThinking() {
@@ -334,7 +289,7 @@
       right = `<div class="response-wrap"><div class="answer-rail" aria-hidden="true"></div><div class="response-content"><article class="response visible" data-response-index="${index}"><div class="response-body">${markdownToHtml(assistant.content)}</div><div class="actions"><button class="response-action" data-copy-response="${index}" type="button">Copy</button><button class="response-action" data-regenerate="${index}" type="button">Regenerate</button><button class="response-action" data-more="${index}" type="button">More</button></div></article></div></div>`;
     } else if (isLastUser && state.controller) {
       const stage = stageForPhase(state.currentPhase, user.content) ?? 0;
-      right = `<div class="response-wrap"><div class="answer-rail" aria-hidden="true"></div><div class="response-content"><div class="thinking visible" id="thinking"><span aria-hidden="true" class="signal"></span><span class="thinking-phrase is-resting" id="thinkingPhrase">${esc(PHRASES[stage])}</span></div><article class="response" id="response"><div id="responseBody"></div><div class="actions"><button class="response-action" data-copy-response="${index}" type="button">Copy</button><button class="response-action" data-regenerate="${index}" type="button">Regenerate</button><button class="response-action" data-more="${index}" type="button">More</button></div></article></div></div>`;
+      right = `<div class="response-wrap"><div class="answer-rail" aria-hidden="true"></div><div class="response-content"><div class="thinking visible" id="thinking"><span aria-hidden="true" class="signal"></span><span class="thinking-phrase is-resting" id="thinkingPhrase">${esc(state.thinking.labels[stage] || PHRASES[stage])}</span></div><article class="response" id="response"><div id="responseBody"></div><div class="actions"><button class="response-action" data-copy-response="${index}" type="button">Copy</button><button class="response-action" data-regenerate="${index}" type="button">Regenerate</button><button class="response-action" data-more="${index}" type="button">More</button></div></article></div></div>`;
     }
     return `<div class="conversation-pair" data-pair="${index}">${longPromptHtml(user, index)}${right}</div>`;
   }
@@ -633,8 +588,11 @@
 
   function handlePhase(data) {
     state.currentPhase = data?.phase || state.currentPhase;
-    const stage = stageForPhase(state.currentPhase, state.currentPrompt);
-    if (stage !== null) requestThinkingStage(stage);
+    const stage = stageForPhase(state.currentPhase);
+    if (stage !== null) {
+      state.thinking.labels[stage] = String(data?.label || PHRASES[stage] || "");
+      requestThinkingStage(stage);
+    }
   }
 
   function finalizeResponse(index, content) {
@@ -702,7 +660,6 @@
             const text = String(packet.data?.text || "");
             if (text) {
               finalText += text;
-              cancelThinkingTransitions();
               hideThinking();
               updateLiveResponse(finalText);
             }
@@ -714,11 +671,6 @@
             throw new Error(String(packet.data?.message || "AskMoina could not complete the request."));
           } else if (packet.event === "complete") {
             state.currentPhase = "complete";
-            if (!finalText) {
-              state.thinking.queuedStages = [5];
-              state.thinking.playing = false;
-              runNextThinkingStage();
-            }
           }
 
           if (state.followLatest && (packet.event === "delta" || packet.event === "replace")) {
