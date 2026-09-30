@@ -67,7 +67,7 @@ export function streamChat(env: Env, input: ChatInput, signal?: AbortSignal): Re
           .map((message) => ({ role: message.role, content: String(message.content).slice(0, 12000) })) as ChatMessage[];
         const mode = MODE_CONFIG[input.mode] || MODE_CONFIG.auto;
 
-        emit(controller, "phase", { phase: "initializing", label: "Initializing AskMoina Engine" }, encoder);
+        emit(controller, "phase", { phase: "initializing", label: "Initializing AskMoina Pipeline" }, encoder);
         emit(controller, "phase", { phase: "searching", label: "Indexing Real-Time Knowledge Base" }, encoder);
         const searchContext = await webSearch(cleanPrompt, 3);
 
