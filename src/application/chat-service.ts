@@ -23,6 +23,28 @@ function rateLimitMessage(error: unknown): boolean {
   return text.includes("429") || text.includes("rate") || text.includes("quota") || text.includes("limit");
 }
 
+function extractGroqStreamContent(frame: string): { text: string; done: boolean } {
+  let text = "";
+  let done = false;
+  for (const line of frame.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (!payload) continue;
+    if (payload === "[DONE]") {
+      done = true;
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(payload);
+      const delta = parsed?.choices?.[0]?.delta?.content;
+      if (typeof delta === "string") text += delta;
+    } catch {
+      // Ignore malformed/non-JSON SSE frames; the upstream stream may include keepalive data.
+    }
+  }
+  return { text, done };
+}
+
 export function streamChat(env: Env, input: ChatInput, signal?: AbortSignal): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   return new ReadableStream<Uint8Array>({
@@ -79,6 +101,8 @@ export function streamChat(env: Env, input: ChatInput, signal?: AbortSignal): Re
         let emittedDelta = false;
         if (audit?.body) {
           const reader = audit.body.getReader();
+          const decoder = new TextDecoder();
+          let sseBuffer = "";
           try {
             while (true) {
               if (signal?.aborted) {
@@ -87,9 +111,28 @@ export function streamChat(env: Env, input: ChatInput, signal?: AbortSignal): Re
               }
               const { value, done } = await reader.read();
               if (done) break;
-              if (value) {
+              if (!value) continue;
+
+              sseBuffer += decoder.decode(value, { stream: true });
+              while (true) {
+                const boundary = /\r?\n\r?\n/.exec(sseBuffer);
+                if (!boundary || boundary.index == null) break;
+                const frame = sseBuffer.slice(0, boundary.index);
+                sseBuffer = sseBuffer.slice(boundary.index + boundary[0].length);
+                const parsed = extractGroqStreamContent(frame);
+                if (parsed.text) {
+                  emittedDelta = true;
+                  emit(controller, "delta", { text: parsed.text }, encoder);
+                }
+                if (parsed.done) break;
+              }
+            }
+            sseBuffer += decoder.decode();
+            if (sseBuffer.trim()) {
+              const parsed = extractGroqStreamContent(sseBuffer);
+              if (parsed.text) {
                 emittedDelta = true;
-                controller.enqueue(value);
+                emit(controller, "delta", { text: parsed.text }, encoder);
               }
             }
           } catch (error) {
