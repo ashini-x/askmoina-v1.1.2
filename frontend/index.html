@@ -547,19 +547,36 @@
   window.submitForm=async e=>{
     e.preventDefault();
     setAuthMessage('');
+
     const email=document.getElementById('email').value.trim();
     const password=document.getElementById('password').value;
     const name=document.getElementById('name').value.trim();
     const confirm=document.getElementById('confirm').value;
 
     if(mode==='signup'){
-      if(!name){setAuthMessage('Please enter your full name.','error');return false;}
-      if(password!==confirm){setAuthMessage('Passwords do not match.','error');return false;}
-      if(password.length<8){setAuthMessage('Please use at least 8 characters for your password.','error');return false;}
+      if(!name){
+        setAuthMessage('Please enter your full name.','error');
+        return false;
+      }
+
+      if(password!==confirm){
+        setAuthMessage('Passwords do not match.','error');
+        return false;
+      }
+
+      if(password.length<8){
+        setAuthMessage('Please use at least 8 characters for your password.','error');
+        return false;
+      }
     }
-    if(!email||!password){setAuthMessage('Please complete the required fields.','error');return false;}
+
+    if(!email||!password){
+      setAuthMessage('Please complete the required fields.','error');
+      return false;
+    }
 
     setSubmitting(true);
+
     try{
       if(mode==='signup'){
         const {data,error}=await supabaseClient.auth.signUp({
@@ -570,22 +587,38 @@
             emailRedirectTo:authPageUrl
           }
         });
+
         if(error) throw error;
+
         if(data.session){
-          setAuthMessage('Account created and signed in.','success');
+          window.location.href='/app.html';
         }else{
-          setAuthMessage('Account created. Check your email to confirm your address, then return here to sign in.','success');
+          setAuthMessage(
+            'Account created. Check your email to confirm your address, then return here to sign in.',
+            'success'
+          );
         }
+
       }else{
-        const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
+        const {data,error}=await supabaseClient.auth.signInWithPassword({
+          email,
+          password
+        });
+
         if(error) throw error;
-        if(data.session) setAuthMessage('Signed in successfully.','success');
+
+        if(data.session){
+          window.location.href='/app.html';
+        }
       }
+
     }catch(error){
       setAuthMessage(friendlyAuthError(error),'error');
+
     }finally{
       setSubmitting(false);
     }
+
     return false;
   };
 
@@ -609,8 +642,9 @@
   });
 
   supabaseClient.auth.onAuthStateChange((event,session)=>{
-    if(event==='SIGNED_IN'&&session){
-      setAuthMessage('Authentication successful. Your AskMoina session is active.','success');
+    if (event === 'SIGNED_IN' && session) {
+      window.location.href = '/app.html';
+    
     }else if(event==='SIGNED_OUT'){
       setAuthMessage('Signed out.','success');
     }
@@ -619,7 +653,9 @@
   (async()=>{
     try{
       const {data}=await supabaseClient.auth.getSession();
-      if(data.session) setAuthMessage('You are already signed in.','success');
+      if(data.session){
+        window.location.href='/app.html';
+      }
     }catch(error){
       console.error('AskMoina auth initialization failed',error);
     }
