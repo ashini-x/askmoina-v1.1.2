@@ -9,20 +9,13 @@ function json(data: unknown, status = 200, extraHeaders: HeadersInit = {}): Resp
   });
 }
 
-function allowedOrigin(request: Request): string | null {
-  const origin = request.headers.get("Origin");
-  if (!origin) return null;
-  const requestOrigin = new URL(request.url).origin;
-  if (origin === requestOrigin) return origin;
-  const allowList = ["https://askmoina.pages.dev", "http://localhost:4173", "http://127.0.0.1:4173", "http://localhost:8787", "http://127.0.0.1:8787"];
-  return allowList.includes(origin) ? origin : null;
-}
-
-function corsHeaders(request: Request): HeadersInit {
-  const origin = allowedOrigin(request);
-  return origin
-    ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type", Vary: "Origin" }
-    : {};
+function corsHeaders(): HeadersInit {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "86400",
+  };
 }
 
 async function readChatRequest(request: Request): Promise<ChatRequest> {
@@ -43,7 +36,7 @@ async function readChatRequest(request: Request): Promise<ChatRequest> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const cors = corsHeaders(request);
+    const cors = corsHeaders();
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
     const url = new URL(request.url);
@@ -63,7 +56,13 @@ export default {
             { role: "user", content: body.prompt },
           ],
         }, request.signal);
-        return new Response(stream, { status: 200, headers: { ...SSE_HEADERS, ...cors, "Access-Control-Allow-Credentials": "true" } });
+        return new Response(stream, {
+          status: 200,
+          headers: {
+            ...SSE_HEADERS,
+            ...cors,
+          },
+        });
       } catch (error) {
         return json({ error: error instanceof Error ? error.message : String(error) }, 400, cors);
       }
