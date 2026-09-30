@@ -14,7 +14,7 @@ function allowedOrigin(request: Request): string | null {
   if (!origin) return null;
   const requestOrigin = new URL(request.url).origin;
   if (origin === requestOrigin) return origin;
-  const allowList = ["http://localhost:4173", "http://127.0.0.1:4173", "http://localhost:8787", "http://127.0.0.1:8787"];
+  const allowList = ["https://askmoina.pages.dev", "http://localhost:4173", "http://127.0.0.1:4173", "http://localhost:8787", "http://127.0.0.1:8787"];
   return allowList.includes(origin) ? origin : null;
 }
 
