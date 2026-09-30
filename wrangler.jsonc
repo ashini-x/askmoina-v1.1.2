@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "askmoina",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-09-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./frontend",
+    "binding": "ASSETS"
+  },
+  "secrets": {
+    "required": ["GROQ_API_KEY", "E2B_API_KEY"]
+  },
+  "vars": {
+    "PRIMARY_MODEL": "openai/gpt-oss-120b",
+    "LIVE_SEARCH_ALWAYS_ON": "true",
+    "SANDBOX_ALWAYS_ON": "true"
+  }
+}
